@@ -27,6 +27,7 @@ export default function CanvasEditor({
   const stageRef = useRef<Konva.Stage>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imageCache, setImageCache] = useState<Record<string, HTMLImageElement>>({})
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({})
 
   // Update transformer when selection changes
   useEffect(() => {
@@ -47,19 +48,70 @@ export default function CanvasEditor({
     if (typeof window === 'undefined') return
 
     layers.forEach((layer) => {
-      if (layer.type === 'image' && layer.imageUrl && !imageCache[layer.imageUrl]) {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
+      if (layer.type === 'image' && layer.imageUrl) {
+        // If image is already cached and not in error state, skip
+        if (imageCache[layer.imageUrl] && !imageErrors[layer.imageUrl]) {
+          return
+        }
+
+        // Clear error state if URL changed
+        if (imageErrors[layer.imageUrl]) {
+          setImageErrors((prev) => {
+            const newErrors = { ...prev }
+            delete newErrors[layer.imageUrl!]
+            return newErrors
+          })
+        }
+
+        const img = document.createElement('img')
+        
+        // Try with crossOrigin first, but don't fail if CORS is not supported
+        // Some servers don't support CORS but still allow image loading
+        try {
+          img.crossOrigin = 'anonymous'
+        } catch {
+          // Ignore crossOrigin errors
+        }
+        
         img.src = layer.imageUrl
+        
         img.onload = () => {
           setImageCache((prev) => ({ ...prev, [layer.imageUrl!]: img }))
+          setImageErrors((prev) => {
+            const newErrors = { ...prev }
+            delete newErrors[layer.imageUrl!]
+            return newErrors
+          })
         }
+        
         img.onerror = () => {
-          console.error('Failed to load image:', layer.imageUrl)
+          const imageUrl = layer.imageUrl
+          if (!imageUrl) return
+          
+          console.error('Failed to load image:', imageUrl)
+          setImageErrors((prev) => ({ ...prev, [imageUrl]: true }))
+          
+          // Try loading without crossOrigin as fallback
+          if (img.crossOrigin) {
+            const fallbackImg = document.createElement('img')
+            fallbackImg.src = imageUrl
+            fallbackImg.onload = () => {
+              setImageCache((prev) => ({ ...prev, [imageUrl]: fallbackImg }))
+              setImageErrors((prev) => {
+                const newErrors = { ...prev }
+                delete newErrors[imageUrl]
+                return newErrors
+              })
+            }
+            fallbackImg.onerror = () => {
+              console.error('Failed to load image even without CORS:', imageUrl)
+            }
+          }
         }
       }
     })
-  }, [layers, imageCache])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers])
 
   // Handle keyboard events
   useEffect(() => {
@@ -138,7 +190,6 @@ export default function CanvasEditor({
         >
           <Layer>
             {layers.map((layer) => {
-              const isSelected = layer.id === selectedLayerId
               const key = layer.id
 
               if (layer.type === 'text') {
@@ -166,7 +217,35 @@ export default function CanvasEditor({
                 )
               } else if (layer.type === 'image') {
                 const img = imageCache[layer.imageUrl || '']
-                if (!img) return null
+                const hasError = imageErrors[layer.imageUrl || '']
+                
+                // Show placeholder if image is loading or has error
+                if (!img || hasError) {
+                  // Center text vertically by adjusting y position
+                  const textY = layer.y + layer.height / 2 - 7 // Approximate center
+                  return (
+                    <Text
+                      key={key}
+                      id={layer.id}
+                      x={layer.x}
+                      y={textY}
+                      width={layer.width}
+                      height={layer.height}
+                      rotation={layer.rotation}
+                      opacity={layer.opacity * 0.5}
+                      text={hasError ? 'Image failed to load' : 'Loading image...'}
+                      fontSize={14}
+                      fontFamily="Arial"
+                      fill="#999999"
+                      align="center"
+                      draggable
+                      onClick={() => onLayerSelect(layer.id)}
+                      onTap={() => onLayerSelect(layer.id)}
+                      onDragEnd={(e) => handleLayerDragEnd(layer.id, e)}
+                      onTransformEnd={(e) => handleLayerTransformEnd(layer.id, e)}
+                    />
+                  )
+                }
 
                 let imageWidth = img.width
                 let imageHeight = img.height
@@ -192,6 +271,7 @@ export default function CanvasEditor({
                 }
 
                 return (
+                  // eslint-disable-next-line jsx-a11y/alt-text
                   <Image
                     key={key}
                     id={layer.id}
