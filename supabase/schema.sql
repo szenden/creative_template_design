@@ -17,3 +17,6 @@ create index if not exists idx_templates_status on templates(status);
 -- Create index on created_at for faster sorting
 create index if not exists idx_templates_created_at on templates(created_at desc);
 
+-- Add canvas column for storing canvas state
+alter table templates add column if not exists canvas jsonb;
+

@@ -7,6 +7,7 @@ export interface Template {
   status: 'draft' | 'active' | 'archived'
   created_at: string
   updated_at: string
+  canvas?: any
 }
 
 interface TemplateCardProps {
@@ -29,7 +30,7 @@ export default function TemplateCard({ template }: TemplateCardProps) {
 
   return (
     <Link
-      href={`/templates/${template.id}/edit`}
+      href={`/templates/${template.id}`}
       className="block p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow"
     >
       <div className="flex items-start justify-between mb-2">
